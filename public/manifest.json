@@ -1,0 +1,18 @@
+{
+  "name": "Pokémon Campus Quest – DAVV",
+  "short_name": "DAVV Quest",
+  "description": "Gotta Catch 'Em All – DAVV Edition. Real-world geofenced campus clue hunt.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#ef4444",
+  "icons": [
+    {
+      "src": "/pokeball.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
