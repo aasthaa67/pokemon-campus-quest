@@ -1,12 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
-import { Checkpoint, GeoPosition, TrainerProfile } from '../types';
-import { TEAMS } from '../config/campusConfig';
+import { CampusId, Checkpoint, GeoPosition, TrainerProfile } from '../types';
+import { CAMPUSES, TEAMS } from '../config/campusConfig';
 import { calculateBearing, calculateHaversineDistance, formatDistance, getCompassDirection } from '../utils/geoUtils';
 import { playClickSound } from '../utils/audioUtils';
-import { Navigation2, Target, Crosshair, MapPin, Zap } from 'lucide-react';
+import { Navigation2, Target, Crosshair, MapPin, Zap, Layers, Compass, Eye, Info } from 'lucide-react';
 
 interface CampusMapProps {
+  currentCampusId?: CampusId;
   checkpoints: Checkpoint[];
   playerPos: GeoPosition | null;
   selectedCheckpoint: Checkpoint | null;
@@ -19,7 +20,28 @@ interface CampusMapProps {
   onCenterPlayer: () => void;
 }
 
+type MapLayerType = 'STREET' | 'SATELLITE' | 'DARK';
+
+const MAP_TILE_CONFIGS: Record<MapLayerType, { url: string; attribution: string; maxZoom: number }> = {
+  STREET: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
+  },
+  SATELLITE: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP',
+    maxZoom: 19,
+  },
+  DARK: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    maxZoom: 19,
+  },
+};
+
 export const CampusMap: React.FC<CampusMapProps> = ({
+  currentCampusId = 'TAKSHASHILA',
   checkpoints,
   playerPos,
   selectedCheckpoint,
@@ -33,18 +55,28 @@ export const CampusMap: React.FC<CampusMapProps> = ({
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const playerMarkerRef = useRef<L.Marker | null>(null);
   const playerAccuracyCircleRef = useRef<L.Circle | null>(null);
   const checkpointMarkersRef = useRef<Map<number, { marker: L.Marker; circle: L.Circle }>>(new Map());
+  const campusBoundaryPolygonRef = useRef<L.Polygon | null>(null);
+  const landmarkPoiMarkersRef = useRef<L.Marker[]>([]);
+
+  // Explorer states
+  const [mapLayer, setMapLayer] = useState<MapLayerType>('STREET');
+  const [showLandmarkExplorer, setShowLandmarkExplorer] = useState<boolean>(false);
+  const [showLayerMenu, setShowLayerMenu] = useState<boolean>(false);
+
+  const activeCampus = CAMPUSES[currentCampusId] || CAMPUSES.TAKSHASHILA;
 
   // Initialize Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
 
-    // Default center on first checkpoint or DAVV center (22.6896, 75.8753)
-    const initialLat = playerPos?.lat || checkpoints[0]?.latitude || 22.6896;
-    const initialLng = playerPos?.lng || checkpoints[0]?.longitude || 75.8753;
+    // Default center on campus center
+    const initialLat = playerPos?.lat || checkpoints[0]?.latitude || activeCampus.center.lat;
+    const initialLng = playerPos?.lng || checkpoints[0]?.longitude || activeCampus.center.lng;
 
     const map = L.map(mapContainerRef.current, {
       center: [initialLat, initialLng],
@@ -53,11 +85,13 @@ export const CampusMap: React.FC<CampusMapProps> = ({
       attributionControl: false,
     });
 
-    // Clean OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors',
+    // Default Street tiles
+    const initialTileConfig = MAP_TILE_CONFIGS[mapLayer];
+    const tileLayer = L.tileLayer(initialTileConfig.url, {
+      maxZoom: initialTileConfig.maxZoom,
+      attribution: initialTileConfig.attribution,
     }).addTo(map);
+    tileLayerRef.current = tileLayer;
 
     // Zoom control at bottom right for mobile ergonomics
     L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -69,6 +103,96 @@ export const CampusMap: React.FC<CampusMapProps> = ({
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Update Tile Layer when mapLayer changes
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (tileLayerRef.current) {
+      tileLayerRef.current.remove();
+    }
+
+    const config = MAP_TILE_CONFIGS[mapLayer];
+    const newTileLayer = L.tileLayer(config.url, {
+      maxZoom: config.maxZoom,
+      attribution: config.attribution,
+    }).addTo(map);
+    tileLayerRef.current = newTileLayer;
+  }, [mapLayer]);
+
+  // Update Campus Boundary Polygon
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (campusBoundaryPolygonRef.current) {
+      campusBoundaryPolygonRef.current.remove();
+      campusBoundaryPolygonRef.current = null;
+    }
+
+    if (activeCampus.boundary && activeCampus.boundary.length > 0) {
+      const boundaryColor = currentCampusId === 'IET_DAVV' ? '#6366f1' : '#ef4444';
+      const poly = L.polygon(activeCampus.boundary, {
+        color: boundaryColor,
+        weight: 3,
+        dashArray: '8, 8',
+        fillColor: boundaryColor,
+        fillOpacity: mapLayer === 'SATELLITE' ? 0.08 : 0.05,
+      }).addTo(map);
+
+      poly.bindTooltip(`🏛️ ${activeCampus.name} Campus Perimeter`, {
+        sticky: true,
+        className: 'bg-slate-900 text-white font-bold text-xs p-1 rounded border border-slate-700',
+      });
+
+      campusBoundaryPolygonRef.current = poly;
+    }
+  }, [currentCampusId, activeCampus, mapLayer]);
+
+  // Toggle Landmark Explorer POI Markers
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Remove old landmark POI markers
+    landmarkPoiMarkersRef.current.forEach((m) => m.remove());
+    landmarkPoiMarkersRef.current = [];
+
+    if (!showLandmarkExplorer) return;
+
+    const points = activeCampus.landmarkExplorerPoints || [];
+    points.forEach((pt) => {
+      const iconHtml = `
+        <div class="flex items-center justify-center w-8 h-8 rounded-full bg-slate-900/90 border-2 border-amber-400 text-base shadow-lg shadow-amber-500/30 transform hover:scale-125 transition-transform cursor-pointer">
+          <span>${pt.icon}</span>
+        </div>
+      `;
+
+      const markerIcon = L.divIcon({
+        className: 'landmark-poi-marker',
+        html: iconHtml,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+      });
+
+      const marker = L.marker([pt.lat, pt.lng], { icon: markerIcon }).addTo(map);
+      marker.bindPopup(`
+        <div class="p-2 min-w-[200px] text-slate-900 font-sans">
+          <div class="flex items-center gap-1.5 font-bold text-sm text-slate-950 mb-1">
+            <span>${pt.icon}</span>
+            <span>${pt.name}</span>
+          </div>
+          <span class="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 mb-1.5 uppercase">
+            ${pt.category}
+          </span>
+          <p class="text-xs text-slate-700 leading-snug">${pt.description}</p>
+        </div>
+      `);
+
+      landmarkPoiMarkersRef.current.push(marker);
+    });
+  }, [showLandmarkExplorer, currentCampusId, activeCampus]);
 
   // Update Checkpoint Markers & Geofences
   const prevFirstCpLatRef = useRef<number | null>(null);
@@ -124,6 +248,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({
         dashArray: isCompleted ? undefined : isLockedInSequence ? '4, 6' : '6, 6',
       }).addTo(map);
 
+      const isStage1Solved = isCompleted || Boolean(trainer?.stage1CompletedIds?.includes(cp.id));
+
       // Poké Ball HTML Marker Icon
       const iconHtml = `
         <div class="relative flex items-center justify-center cursor-pointer group">
@@ -155,7 +281,15 @@ export const CampusMap: React.FC<CampusMapProps> = ({
             }
           </div>
           <div class="absolute -bottom-5 whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/90 text-slate-200 text-[10px] font-bold border border-slate-700/80 shadow">
-            ${isLockedInSequence ? `🔒 ${cp.name.split(' ')[0]}` : cp.name.split(' ')[0]}
+            ${
+              isCompleted
+                ? `✓ ${cp.name.split(' ')[0]}`
+                : isStage1Solved
+                ? cp.name.split(' ')[0]
+                : isLockedInSequence
+                ? `🔒 #${cp.id}`
+                : `${cp.pokemonName}`
+            }
           </div>
         </div>
       `;
@@ -232,17 +366,26 @@ export const CampusMap: React.FC<CampusMapProps> = ({
     }
   }, [playerPos, trainer]);
 
-  // Handle "Fit All"
+  // Handle "Fit All" (Full Campus View)
   const handleFitAll = () => {
     const map = mapInstanceRef.current;
-    if (!map || checkpoints.length === 0) return;
+    if (!map) return;
     playClickSound();
 
-    const bounds = L.latLngBounds(checkpoints.map((c) => [c.latitude, c.longitude]));
+    const bounds = L.latLngBounds([]);
+    if (checkpoints.length > 0) {
+      checkpoints.forEach((c) => bounds.extend([c.latitude, c.longitude]));
+    }
+    if (activeCampus.boundary) {
+      activeCampus.boundary.forEach(([lat, lng]) => bounds.extend([lat, lng]));
+    }
     if (playerPos) {
       bounds.extend([playerPos.lat, playerPos.lng]);
     }
-    map.fitBounds(bounds, { padding: [50, 50] });
+
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 17 });
+    }
   };
 
   // Target checkpoint for HUD navigation info
@@ -262,9 +405,16 @@ export const CampusMap: React.FC<CampusMapProps> = ({
   const isTargetInside = targetDistance !== null && targetDistance <= (targetCp?.radius || 50);
 
   return (
-    <div className="relative w-full h-[55vh] sm:h-[65vh] rounded-2xl overflow-hidden border border-slate-800 shadow-xl bg-slate-950">
+    <div className="relative w-full h-[58vh] sm:h-[68vh] rounded-3xl overflow-hidden border border-slate-800 shadow-2xl bg-slate-950">
       {/* Leaflet Container */}
       <div ref={mapContainerRef} className="w-full h-full z-0" />
+
+      {/* Campus Watermark / Title Badge (Top Center-Right) */}
+      <div className="absolute top-3 right-16 z-20 hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-700/80 backdrop-blur-md shadow-lg text-xs font-bold text-white">
+        <span>{activeCampus.icon}</span>
+        <span>{activeCampus.name}</span>
+        <span className="text-[10px] text-amber-400 font-mono">({currentCampusId === 'IET_DAVV' ? 'Khandwa Rd' : 'Main Hub'})</span>
+      </div>
 
       {/* Map Control Buttons (Floating Top Right) */}
       <div className="absolute top-3 right-3 z-20 flex flex-col gap-2">
@@ -284,14 +434,88 @@ export const CampusMap: React.FC<CampusMapProps> = ({
           <Crosshair className="w-5 h-5" />
         </button>
 
-        {/* Fit Bounds */}
+        {/* Fit Full Campus Bounds */}
         <button
           onClick={handleFitAll}
           className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-amber-400 hover:text-white shadow-lg backdrop-blur-sm transition"
-          title="Show Entire Campus Checkpoints"
+          title="Explore Full College Campus Perimeter & Checkpoints"
         >
           <Target className="w-5 h-5" />
         </button>
+
+        {/* Toggle College Landmark POIs */}
+        <button
+          onClick={() => {
+            playClickSound();
+            setShowLandmarkExplorer(!showLandmarkExplorer);
+          }}
+          className={`p-2.5 rounded-xl border shadow-lg backdrop-blur-sm transition ${
+            showLandmarkExplorer
+              ? 'bg-amber-500 text-slate-950 border-amber-300 ring-2 ring-amber-400/50'
+              : 'bg-slate-900/90 hover:bg-slate-800 border-slate-700/80 text-slate-300 hover:text-amber-400'
+          }`}
+          title={showLandmarkExplorer ? 'Hide College Landmark Points' : 'Explore All Points of the College'}
+        >
+          <Compass className="w-5 h-5" />
+        </button>
+
+        {/* Map Layer Switcher Toggle */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              playClickSound();
+              setShowLayerMenu(!showLayerMenu);
+            }}
+            className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-indigo-400 hover:text-white shadow-lg backdrop-blur-sm transition"
+            title="Switch Map Tiles (Street, Satellite, Dark)"
+          >
+            <Layers className="w-5 h-5" />
+          </button>
+
+          {showLayerMenu && (
+            <div className="absolute right-0 top-12 w-36 bg-slate-900/95 border border-slate-700 rounded-2xl shadow-2xl p-1.5 flex flex-col gap-1 z-30 backdrop-blur-md animate-fade-in">
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setMapLayer('STREET');
+                  setShowLayerMenu(false);
+                }}
+                className={`w-full py-1.5 px-2.5 rounded-xl text-left text-xs font-bold transition flex items-center justify-between ${
+                  mapLayer === 'STREET' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>🗺️ Streets</span>
+                {mapLayer === 'STREET' && <span>✓</span>}
+              </button>
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setMapLayer('SATELLITE');
+                  setShowLayerMenu(false);
+                }}
+                className={`w-full py-1.5 px-2.5 rounded-xl text-left text-xs font-bold transition flex items-center justify-between ${
+                  mapLayer === 'SATELLITE' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>🛰️ Satellite</span>
+                {mapLayer === 'SATELLITE' && <span>✓</span>}
+              </button>
+              <button
+                onClick={() => {
+                  playClickSound();
+                  setMapLayer('DARK');
+                  setShowLayerMenu(false);
+                }}
+                className={`w-full py-1.5 px-2.5 rounded-xl text-left text-xs font-bold transition flex items-center justify-between ${
+                  mapLayer === 'DARK' ? 'bg-amber-500 text-slate-950' : 'text-slate-300 hover:bg-slate-800'
+                }`}
+              >
+                <span>🌙 Dark Tactical</span>
+                {mapLayer === 'DARK' && <span>✓</span>}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Floating Checkpoint Selector Carousel (Top Left) */}
@@ -318,7 +542,11 @@ export const CampusMap: React.FC<CampusMapProps> = ({
               }`}
             >
               <span>{isDone ? '✓' : `#${cp.id}`}</span>
-              <span className="truncate max-w-[90px]">{cp.name}</span>
+              <span className="truncate max-w-[90px]">
+                {isDone || trainer?.stage1CompletedIds?.includes(cp.id)
+                  ? cp.name
+                  : `${cp.pokemonName} Outpost`}
+              </span>
             </button>
           );
         })}
@@ -347,7 +575,10 @@ export const CampusMap: React.FC<CampusMapProps> = ({
                 </div>
                 <div>
                   <h3 className="font-display font-bold text-sm leading-tight text-white">
-                    {targetCp.name}
+                    {trainer?.completedCheckpointIds.includes(targetCp.id) ||
+                    trainer?.stage1CompletedIds?.includes(targetCp.id)
+                      ? targetCp.name
+                      : `${targetCp.pokemonName} Mystery Outpost`}
                   </h3>
                   <p className="text-[11px] text-slate-300">
                     Radius: {targetCp.radius}m • {targetCp.pokemonName} Point

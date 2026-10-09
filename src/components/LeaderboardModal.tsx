@@ -174,11 +174,18 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     <td className="py-3 px-3">
                       <div className="flex items-center gap-2">
                         <div>
-                          <div className="font-bold flex items-center gap-1.5">
+                          <div className="font-bold flex items-center gap-1.5 flex-wrap">
                             <span>{entry.name}</span>
                             {entry.isCurrentTrainer && (
                               <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400 text-slate-950 font-black uppercase">
                                 YOU
+                              </span>
+                            )}
+                            {entry.rollNumber && (
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                {entry.hideRollNumber
+                                  ? `${entry.rollNumber.slice(0, 3)}***${entry.rollNumber.slice(-1)}`
+                                  : entry.rollNumber}
                               </span>
                             )}
                           </div>

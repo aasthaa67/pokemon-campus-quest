@@ -5,6 +5,15 @@
 
 export type CampusId = 'TAKSHASHILA' | 'IET_DAVV';
 
+export interface CampusLandmarkPoint {
+  name: string;
+  category: string;
+  icon: string;
+  lat: number;
+  lng: number;
+  description: string;
+}
+
 export interface CampusConfig {
   id: CampusId;
   name: string;
@@ -17,6 +26,8 @@ export interface CampusConfig {
     lng: number;
     zoom: number;
   };
+  boundary?: [number, number][];
+  landmarkExplorerPoints?: CampusLandmarkPoint[];
   checkpoints: Checkpoint[];
 }
 
@@ -99,8 +110,15 @@ export interface PowerUp {
   count: number;
 }
 
+export interface TrainerPrivacySettings {
+  hideRollNumberOnLeaderboard: boolean;
+  shareTeamAffiliation: boolean;
+}
+
 export interface TrainerProfile {
   name: string;
+  rollNumber: string; // Mandatory student enrollment / roll number for campus quest privacy & participation
+  privacySettings?: TrainerPrivacySettings;
   team: TeamId;
   score: number;
   xp: number;
@@ -119,6 +137,8 @@ export interface TrainerProfile {
 export interface LeaderboardEntry {
   id: string;
   name: string;
+  rollNumber?: string;
+  hideRollNumber?: boolean;
   team: TeamId;
   xp: number;
   campusId?: CampusId;

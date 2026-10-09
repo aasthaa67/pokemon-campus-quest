@@ -2,15 +2,24 @@ import { CampusId, Checkpoint, LeaderboardEntry, PowerUpType, TrainerProfile } f
 import { CAMPUSES, INITIAL_MOCK_LEADERBOARD, TAKSHASHILA_CHECKPOINTS, IET_DAVV_CHECKPOINTS } from '../config/campusConfig';
 import { generateCampusQuest } from './questGenerator';
 
+export const AUTHORIZED_ORGANIZER_EMAIL = 'aasthagupta440@gmail.com';
+
 const STORAGE_KEYS = {
   TRAINER_PROFILE: 'davv_pokemon_trainer_profile',
   CHECKPOINTS_PREFIX: 'davv_pokemon_checkpoints_',
   LEADERBOARD: 'davv_pokemon_leaderboard',
   CURRENT_CAMPUS: 'davv_pokemon_current_campus',
+  ORGANIZER_PASSWORD: 'davv_pokemon_organizer_password',
+  ORGANIZER_SESSION: 'davv_pokemon_organizer_session',
 };
 
 export const INITIAL_TRAINER_PROFILE: TrainerProfile = {
   name: '',
+  rollNumber: '',
+  privacySettings: {
+    hideRollNumberOnLeaderboard: false,
+    shareTeamAffiliation: true,
+  },
   team: 'FIRE',
   score: 0,
   xp: 0,
@@ -154,6 +163,8 @@ export function loadLeaderboard(currentTrainer?: TrainerProfile | null): Leaderb
     const myEntry: LeaderboardEntry = {
       id: 'trainer-me',
       name: `${currentTrainer.name} (You)`,
+      rollNumber: currentTrainer.rollNumber,
+      hideRollNumber: currentTrainer.privacySettings?.hideRollNumberOnLeaderboard ?? false,
       team: currentTrainer.team,
       campusId: currentTrainer.currentCampusId,
       xp: currentTrainer.xp,
@@ -174,6 +185,57 @@ export function loadLeaderboard(currentTrainer?: TrainerProfile | null): Leaderb
     if (b.xp !== a.xp) return b.xp - a.xp;
     return b.checkpointsCompleted - a.checkpointsCompleted;
   });
+}
+
+/**
+ * Organizer Password & Session Management
+ */
+export function getSavedOrganizerPassword(): string | null {
+  try {
+    return localStorage.getItem(STORAGE_KEYS.ORGANIZER_PASSWORD);
+  } catch (e) {
+    return null;
+  }
+}
+
+export function setSavedOrganizerPassword(password: string): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ORGANIZER_PASSWORD, password.trim());
+  } catch (e) {
+    console.error('Failed to save organizer password:', e);
+  }
+}
+
+export function isOrganizerSessionActive(): boolean {
+  try {
+    const session = localStorage.getItem(STORAGE_KEYS.ORGANIZER_SESSION);
+    if (!session) return false;
+    const parsed = JSON.parse(session);
+    return parsed.email === AUTHORIZED_ORGANIZER_EMAIL && parsed.expiresAt > Date.now();
+  } catch (e) {
+    return false;
+  }
+}
+
+export function saveOrganizerSession(): void {
+  try {
+    // 24 hour session for the organizer
+    const session = {
+      email: AUTHORIZED_ORGANIZER_EMAIL,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
+    };
+    localStorage.setItem(STORAGE_KEYS.ORGANIZER_SESSION, JSON.stringify(session));
+  } catch (e) {
+    console.error('Failed to save organizer session:', e);
+  }
+}
+
+export function clearOrganizerSession(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.ORGANIZER_SESSION);
+  } catch (e) {
+    console.error('Failed to clear organizer session:', e);
+  }
 }
 
 export function saveLeaderboard(entries: LeaderboardEntry[]): void {

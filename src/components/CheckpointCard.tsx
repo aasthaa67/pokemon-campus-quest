@@ -90,11 +90,6 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
   const [selectedStage1Option, setSelectedStage1Option] = useState<string | null>(null);
   const [selectedStage2Option, setSelectedStage2Option] = useState<string | null>(null);
 
-  // Stage 1 jumbled options (ensures answer is never always at index 0)
-  const [stage1Options, setStage1Options] = useState<string[]>(() =>
-    jumbleOptions(checkpoint.stage1.options, checkpoint.stage1.answer)
-  );
-
   // Active Stage 2 riddle (allows pulling from challenging riddle bank & jumbled options)
   const [activeStage2, setActiveStage2] = useState<Stage2PopCultureRiddle>(() => ({
     ...checkpoint.stage2,
@@ -121,7 +116,6 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
     setStage2Attempts(0);
     setSelectedStage1Option(null);
     setSelectedStage2Option(null);
-    setStage1Options(jumbleOptions(checkpoint.stage1.options, checkpoint.stage1.answer));
     setActiveStage2({
       ...checkpoint.stage2,
       options: jumbleOptions(checkpoint.stage2.options, checkpoint.stage2.answer),
@@ -180,10 +174,12 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
     const attemptsRemainingForOptions = Math.max(0, MIN_ATTEMPTS_BEFORE_OPTIONS - currentStageAttempts);
 
     let optionUnlockMsg = '';
-    if (currentStageAttempts >= MIN_ATTEMPTS_BEFORE_OPTIONS) {
-      optionUnlockMsg = ' 💡 Multiple-choice options are UNLOCKED below!';
-    } else {
-      optionUnlockMsg = ` (Options unlock in ${attemptsRemainingForOptions} more attempt${attemptsRemainingForOptions === 1 ? '' : 's'})`;
+    if (!stageName.includes('Stage 1')) {
+      if (currentStageAttempts >= MIN_ATTEMPTS_BEFORE_OPTIONS) {
+        optionUnlockMsg = ' 💡 Multiple-choice options are UNLOCKED below!';
+      } else {
+        optionUnlockMsg = ` (Options unlock in ${attemptsRemainingForOptions} more attempt${attemptsRemainingForOptions === 1 ? '' : 's'})`;
+      }
     }
 
     if (trainer?.hasShield) {
@@ -195,7 +191,7 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
     } else {
       onDeductPoints(WRONG_ANSWER_PENALTY_POINTS, `Wrong Answer on ${stageName}`);
       setFeedback({
-        msg: `❌ WRONG GUESS ("${selectedChoice}")! -${WRONG_ANSWER_PENALTY_POINTS} TEAM POINTS DEDUCTED! Attempt ${currentStageAttempts}/${MIN_ATTEMPTS_BEFORE_OPTIONS}.${optionUnlockMsg}`,
+        msg: `❌ WRONG GUESS ("${selectedChoice}")! -${WRONG_ANSWER_PENALTY_POINTS} TEAM POINTS DEDUCTED! Attempt #${currentStageAttempts}.${optionUnlockMsg}`,
         isError: true,
       });
     }
@@ -365,7 +361,7 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
               </span>
             </div>
             <h3 className="font-display font-extrabold text-xl text-white mt-0.5">
-              {checkpoint.name}
+              {checkpoint.pokemonName} Mystery Checkpoint
             </h3>
           </div>
         </div>
@@ -436,7 +432,7 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
               </span>
             </div>
             <h3 className="font-display font-extrabold text-lg sm:text-xl text-white mt-0.5">
-              {checkpoint.name}
+              {stage1Passed ? checkpoint.name : `${checkpoint.pokemonName} Mystery Outpost`}
             </h3>
           </div>
         </div>
@@ -567,7 +563,7 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
                   type="text"
                   value={stage1Input}
                   onChange={(e) => setStage1Input(e.target.value)}
-                  placeholder="Type your answer here (e.g. Main Gate, Canteen, Library)..."
+                  placeholder="Type your campus landmark guess..."
                   className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-amber-400 transition"
                 />
                 <button
@@ -578,47 +574,7 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <p className="text-[11px] text-amber-300/80 italic flex items-center gap-1 px-1">
-                <span>✨ Tip: Matching any 2 words of the landmark answer is accepted!</span>
-              </p>
             </form>
-
-            {/* Options lock status vs Unlocked 4 options */}
-            {stage1Attempts < MIN_ATTEMPTS_BEFORE_OPTIONS ? (
-              <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <span className="flex items-center gap-2">
-                  <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>
-                    Multiple-Choice Options locked: Available only after 3 answer attempts.
-                  </span>
-                </span>
-                <span className="text-[11px] font-mono font-bold text-amber-300 bg-amber-950/60 border border-amber-500/30 px-2 py-0.5 rounded-md shrink-0">
-                  Attempts: {stage1Attempts} / {MIN_ATTEMPTS_BEFORE_OPTIONS}
-                </span>
-              </div>
-            ) : (
-              <div className="space-y-2 pt-1 animate-fade-in">
-                <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>💡 Lifeline Active (3 attempts reached): Select from the 4 options below or type above:</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {stage1Options.map((opt, idx) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => handleStage1AnswerSubmit(opt)}
-                      className="p-2.5 rounded-xl border bg-slate-900/90 hover:bg-slate-800 border-slate-700 hover:border-amber-400 text-left text-xs font-semibold text-slate-200 transition flex items-center gap-2 active:scale-98"
-                    >
-                      <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-400 font-mono text-[10px] flex items-center justify-center border border-slate-700 shrink-0">
-                        {String.fromCharCode(65 + idx)}
-                      </span>
-                      <span>{opt}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -702,7 +658,7 @@ export const CheckpointCard: React.FC<CheckpointCardProps> = ({
                   type="text"
                   value={stage2Input}
                   onChange={(e) => setStage2Input(e.target.value)}
-                  placeholder="Type your riddle answer (e.g. Seven, Clock, Echo, Hole, Candle, Pikachu)..."
+                  placeholder="Type your riddle answer..."
                   className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-white placeholder-slate-500 text-xs sm:text-sm focus:outline-none focus:border-indigo-400 transition"
                 />
                 <button

@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, Flame, Droplets, Leaf, Sparkles, User, Award } from 'lucide-react';
+import { X, ShieldCheck, Flame, Droplets, Leaf, Sparkles, User, Award, Eye, EyeOff, Lock } from 'lucide-react';
 import { TEAMS } from '../config/campusConfig';
-import { TeamId, TrainerProfile } from '../types';
+import { TeamId, TrainerPrivacySettings, TrainerProfile } from '../types';
 import { playClickSound, playPowerUpSound } from '../utils/audioUtils';
 
 interface TrainerSetupModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentTrainer: TrainerProfile | null;
-  onSaveTrainer: (name: string, team: TeamId) => void;
+  onSaveTrainer: (name: string, rollNumber: string, team: TeamId, privacySettings: TrainerPrivacySettings) => void;
 }
 
 export const TrainerSetupModal: React.FC<TrainerSetupModalProps> = ({
@@ -18,6 +18,10 @@ export const TrainerSetupModal: React.FC<TrainerSetupModalProps> = ({
   onSaveTrainer,
 }) => {
   const [name, setName] = useState(currentTrainer?.name || '');
+  const [rollNumber, setRollNumber] = useState(currentTrainer?.rollNumber || '');
+  const [hideRollNumber, setHideRollNumber] = useState<boolean>(
+    currentTrainer?.privacySettings?.hideRollNumberOnLeaderboard ?? false
+  );
   const [selectedTeam, setSelectedTeam] = useState<TeamId>(currentTrainer?.team || 'FIRE');
   const [error, setError] = useState('');
 
@@ -26,6 +30,8 @@ export const TrainerSetupModal: React.FC<TrainerSetupModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = name.trim();
+    const trimmedRoll = rollNumber.trim().toUpperCase();
+
     if (!trimmed) {
       setError('Please enter your Trainer Name to start the adventure!');
       return;
@@ -34,8 +40,20 @@ export const TrainerSetupModal: React.FC<TrainerSetupModalProps> = ({
       setError('Trainer name must be at least 2 characters.');
       return;
     }
+    if (!trimmedRoll) {
+      setError('Privacy & Access Rule: You can only play after entering your DAVV Student Roll Number!');
+      return;
+    }
+    if (trimmedRoll.length < 3) {
+      setError('Student Roll Number must be at least 3 characters.');
+      return;
+    }
+
     playPowerUpSound();
-    onSaveTrainer(trimmed, selectedTeam);
+    onSaveTrainer(trimmed, trimmedRoll, selectedTeam, {
+      hideRollNumberOnLeaderboard: hideRollNumber,
+      shareTeamAffiliation: true,
+    });
     onClose();
   };
 
@@ -89,6 +107,67 @@ export const TrainerSetupModal: React.FC<TrainerSetupModalProps> = ({
                 className="w-full pl-10 pr-4 py-3 bg-slate-800/80 border border-slate-700 focus:border-red-500 focus:ring-1 focus:ring-red-500 rounded-xl text-white placeholder-slate-500 text-sm font-medium transition"
               />
             </div>
+          </div>
+
+          {/* Mandatory Student Roll Number (Privacy & Play Access Requirement) */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 font-display">
+                DAVV Student Roll Number / Enrollment No.
+              </label>
+              <span className="text-[10px] font-bold text-amber-400 bg-amber-950/70 border border-amber-500/50 px-2 py-0.5 rounded-full">
+                Required to Play
+              </span>
+            </div>
+            <div className="relative">
+              <ShieldCheck className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={rollNumber}
+                onChange={(e) => {
+                  setRollNumber(e.target.value);
+                  setError('');
+                }}
+                placeholder="e.g. 24IT105, DAVV26-1042..."
+                maxLength={20}
+                className="w-full pl-10 pr-4 py-3 bg-slate-800/80 border border-slate-700 focus:border-red-500 focus:ring-1 focus:ring-red-500 rounded-xl text-white placeholder-slate-500 text-sm font-mono uppercase tracking-wider font-semibold transition"
+              />
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">
+              🔒 Privacy verification: You can only play after entering your student roll number.
+            </p>
+
+            {/* Privacy Settings: Mask roll number toggle */}
+            <div className="mt-3 p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-slate-800 flex items-center justify-center text-slate-300">
+                  {hideRollNumber ? <EyeOff className="w-4 h-4 text-amber-400" /> : <Eye className="w-4 h-4 text-emerald-400" />}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">Mask Roll No. on Public Leaderboard</p>
+                  <p className="text-[10px] text-slate-400">
+                    {hideRollNumber ? 'Your roll number will be masked (e.g. 24IT***5)' : 'Your roll number will be visible to classmates'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setHideRollNumber(!hideRollNumber);
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  hideRollNumber ? 'bg-amber-500' : 'bg-slate-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    hideRollNumber ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
             {error && <p className="text-xs text-rose-400 mt-1.5 font-medium">{error}</p>}
           </div>
 
@@ -213,7 +292,13 @@ export const TrainerSetupModal: React.FC<TrainerSetupModalProps> = ({
 
           {/* Current Stats (if editing) */}
           {currentTrainer && (
-            <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 grid grid-cols-3 text-center">
+            <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/60 grid grid-cols-4 text-center">
+              <div>
+                <p className="text-[10px] text-slate-400 uppercase font-semibold">Roll No.</p>
+                <p className="font-mono font-bold text-amber-300 text-xs truncate">
+                  {currentTrainer.rollNumber || '—'}
+                </p>
+              </div>
               <div>
                 <p className="text-[10px] text-slate-400 uppercase font-semibold">Score / XP</p>
                 <p className="font-display font-bold text-amber-400 text-sm">

@@ -85,7 +85,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 hidden xs:block">
-                {trainer ? `${trainer.name} • ${team?.name}` : 'Orientation Quest'}
+                {trainer
+                  ? `${trainer.name}${trainer.rollNumber ? ` (#${trainer.rollNumber})` : ''} • ${team?.name}`
+                  : 'Orientation Quest'}
               </p>
             </div>
           </button>

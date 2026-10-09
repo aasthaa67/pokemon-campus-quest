@@ -18,10 +18,28 @@ import {
   Navigation,
   Sparkles,
   Zap,
+  Lock,
+  Unlock,
+  Key,
+  KeyRound,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  ShieldAlert,
+  LogOut,
+  CheckCircle2,
 } from 'lucide-react';
 import { CampusId, Checkpoint, GeoPosition, TrainerProfile } from '../types';
 import { CAMPUSES } from '../config/campusConfig';
 import { playClickSound, playPowerUpSound } from '../utils/audioUtils';
+import {
+  AUTHORIZED_ORGANIZER_EMAIL,
+  getSavedOrganizerPassword,
+  setSavedOrganizerPassword,
+  isOrganizerSessionActive,
+  saveOrganizerSession,
+  clearOrganizerSession,
+} from '../utils/storage';
 
 interface AdminPanelProps {
   isOpen: boolean;
@@ -110,11 +128,100 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [editingCheckpoint, setEditingCheckpoint] = useState<Checkpoint | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; isError?: boolean } | null>(null);
 
+  // Mandatory Organiser Authentication States (Restricted exclusively to aasthagupta440@gmail.com)
+  const [isAuthorized, setIsAuthorized] = useState<boolean>(() => isOrganizerSessionActive());
+  const [enteredEmail, setEnteredEmail] = useState<string>('');
+  const [enteredPassword, setEnteredPassword] = useState<string>('');
+  const [confirmPassword, setConfirmPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  // Password Modification States (organizer can change password as per their choice)
+  const [isChangingPassword, setIsChangingPassword] = useState<boolean>(false);
+  const [newPassword, setNewPassword] = useState<string>('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
+  const [changePassError, setChangePassError] = useState<string | null>(null);
+
   if (!isOpen) return null;
+
+  const savedOrganizerPassword = getSavedOrganizerPassword();
+  const isPasswordSetupMode = !savedOrganizerPassword;
 
   const showStatus = (text: string, isError = false) => {
     setStatusMessage({ text, isError });
     setTimeout(() => setStatusMessage(null), 3500);
+  };
+
+  const handleUnlockOrganizer = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+
+    const trimmedEmail = enteredEmail.trim().toLowerCase();
+    if (trimmedEmail !== AUTHORIZED_ORGANIZER_EMAIL.toLowerCase()) {
+      setAuthError(
+        '⛔ Access Denied: This email is not authorized. Other than the designated organiser email, no email can open the organiser controls.'
+      );
+      return;
+    }
+
+    if (isPasswordSetupMode) {
+      if (!enteredPassword || enteredPassword.length < 4) {
+        setAuthError('Please choose a secure organizer password with at least 4 characters.');
+        return;
+      }
+      if (enteredPassword !== confirmPassword) {
+        setAuthError('Passwords do not match. Please verify your password.');
+        return;
+      }
+      setSavedOrganizerPassword(enteredPassword);
+      saveOrganizerSession();
+      setIsAuthorized(true);
+      playPowerUpSound();
+      showStatus('👑 Organiser password set successfully! Welcome Organiser.');
+    } else {
+      if (!enteredPassword) {
+        setAuthError('Please enter your organizer password to unlock controls.');
+        return;
+      }
+      if (enteredPassword !== savedOrganizerPassword) {
+        setAuthError('❌ Incorrect password! Please enter the correct organizer password.');
+        return;
+      }
+      saveOrganizerSession();
+      setIsAuthorized(true);
+      playPowerUpSound();
+      showStatus('👑 Organiser controls unlocked! Welcome back.');
+    }
+  };
+
+  const handleUpdatePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangePassError(null);
+
+    if (!newPassword || newPassword.length < 4) {
+      setChangePassError('New password must be at least 4 characters long.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setChangePassError('Passwords do not match. Please confirm your new password.');
+      return;
+    }
+
+    setSavedOrganizerPassword(newPassword);
+    playPowerUpSound();
+    setIsChangingPassword(false);
+    setNewPassword('');
+    setConfirmNewPassword('');
+    showStatus('🔑 Organiser password updated successfully as per your choice!');
+  };
+
+  const handleLockSession = () => {
+    playClickSound();
+    clearOrganizerSession();
+    setIsAuthorized(false);
+    setEnteredPassword('');
+    setConfirmPassword('');
+    showStatus('🔒 Organiser controls locked.');
   };
 
   const currentCampus = CAMPUSES[currentCampusId];
@@ -332,6 +439,140 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     reader.readAsText(file);
   };
 
+  if (!isAuthorized) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md animate-fade-in">
+        <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-lg w-full p-5 sm:p-7 shadow-2xl relative">
+          <button
+            onClick={() => {
+              playClickSound();
+              onClose();
+            }}
+            className="absolute top-4 right-4 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-3.5 mb-5">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/50 p-2.5 flex items-center justify-center text-indigo-400 shadow-md">
+              <Lock className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-600/30 text-red-300 border border-red-500/40">
+                  STRICTLY RESTRICTED
+                </span>
+                <span className="text-xs text-slate-400 font-bold">DAVV Quest</span>
+              </div>
+              <h2 className="font-display font-extrabold text-xl sm:text-2xl text-white mt-0.5">
+                Organiser Controls Gate
+              </h2>
+            </div>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-indigo-950/40 border border-indigo-500/40 text-xs text-indigo-200 leading-relaxed mb-5">
+            <div className="flex items-start gap-2">
+              <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-white mb-0.5">
+                  Organiser Controls Mandatorily Restricted:
+                </p>
+                <p>
+                  Access is reserved strictly for the registered organiser. Other than the authorized email, no email can open the organiser controls.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <form onSubmit={handleUnlockOrganizer} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 font-display">
+                Organiser Email Address
+              </label>
+              <input
+                type="email"
+                value={enteredEmail}
+                onChange={(e) => {
+                  setEnteredEmail(e.target.value);
+                  setAuthError(null);
+                }}
+                placeholder="Enter organiser email..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder-slate-500 text-sm font-medium transition"
+                required
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 font-display">
+                  {isPasswordSetupMode ? 'Set Secret Organiser Password' : 'Enter Organiser Password'}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="text-[11px] text-slate-400 hover:text-amber-300 flex items-center gap-1"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showPassword ? 'Hide' : 'Show'}</span>
+                </button>
+              </div>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={enteredPassword}
+                onChange={(e) => {
+                  setEnteredPassword(e.target.value);
+                  setAuthError(null);
+                }}
+                placeholder={isPasswordSetupMode ? 'Choose password as per your choice...' : 'Enter your password...'}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder-slate-500 text-sm font-medium transition"
+                required
+              />
+              {isPasswordSetupMode && (
+                <p className="text-[10px] text-slate-400 mt-1">
+                  ✨ First-time setup: You can set any password of your choice!
+                </p>
+              )}
+            </div>
+
+            {isPasswordSetupMode && (
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 font-display">
+                  Confirm Organiser Password
+                </label>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    setAuthError(null);
+                  }}
+                  placeholder="Re-type password to confirm..."
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-white placeholder-slate-500 text-sm font-medium transition"
+                  required
+                />
+              </div>
+            )}
+
+            {authError && (
+              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/50 text-rose-200 text-xs flex items-start gap-2 animate-fade-in">
+                <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <p className="font-semibold leading-relaxed">{authError}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition active:scale-98"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span>{isPasswordSetupMode ? 'Set Password & Unlock Organiser Controls' : 'Unlock Organiser Controls'}</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
       <div className="bg-slate-900 border border-slate-700/80 rounded-3xl max-w-4xl w-full max-h-[94vh] overflow-y-auto p-4 sm:p-7 shadow-2xl relative">
@@ -347,24 +588,120 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </button>
 
         {/* Header */}
-        <div className="flex items-center gap-3.5 mb-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/50 p-2.5 flex items-center justify-center text-indigo-400 shadow-md">
-            <Shield className="w-6 h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40">
-                ORGANIZER CONTROLS
-              </span>
-              <span className="text-xs text-slate-400 font-bold">
-                DAVV Campus Quest
-              </span>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 border border-indigo-500/50 p-2.5 flex items-center justify-center text-indigo-400 shadow-md">
+              <Shield className="w-6 h-6" />
             </div>
-            <h2 className="font-display font-extrabold text-xl sm:text-2xl text-white mt-0.5">
-              Checkpoint & Clue Hunt Organizer Panel
-            </h2>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-600/30 text-indigo-300 border border-indigo-500/40">
+                  ORGANIZER CONTROLS
+                </span>
+                <span className="text-xs text-slate-400 font-bold">
+                  DAVV Campus Quest
+                </span>
+              </div>
+              <h2 className="font-display font-extrabold text-xl sm:text-2xl text-white mt-0.5">
+                Checkpoint & Clue Hunt Organizer Panel
+              </h2>
+            </div>
+          </div>
+
+          {/* Organizer Session Controls */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[11px] font-mono text-emerald-300 bg-emerald-950/70 border border-emerald-500/40 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Organiser Session Verified</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsChangingPassword(!isChangingPassword)}
+              className="text-xs px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
+              title="Change your organizer password"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-400" />
+              <span>Change Password</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleLockSession}
+              className="text-xs px-2.5 py-1 rounded-xl bg-rose-950/70 hover:bg-rose-900 border border-rose-500/40 text-rose-300 flex items-center gap-1.5 transition"
+              title="Lock organizer controls"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Lock</span>
+            </button>
           </div>
         </div>
+
+        {/* Change Password Inline Form */}
+        {isChangingPassword && (
+          <form
+            onSubmit={handleUpdatePassword}
+            className="mb-4 p-4 rounded-2xl bg-indigo-950/30 border border-indigo-500/40 space-y-3 animate-fade-in"
+          >
+            <div className="flex items-center justify-between">
+              <h4 className="font-display font-bold text-sm text-white flex items-center gap-2">
+                <Key className="w-4 h-4 text-amber-400" />
+                <span>Update Secret Organiser Password (As Per Your Choice)</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsChangingPassword(false)}
+                className="text-xs text-slate-400 hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  New Password
+                </label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                  Confirm New Password
+                </label>
+                <input
+                  type="password"
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Confirm new password..."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs"
+                  required
+                />
+              </div>
+            </div>
+            {changePassError && (
+              <p className="text-xs text-rose-400">{changePassError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsChangingPassword(false)}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 text-xs text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow"
+              >
+                Save New Password
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Campus Selector Tabs */}
         <div className="mb-5 p-1 rounded-2xl bg-slate-950 border border-slate-800 flex items-center gap-1">
@@ -1055,10 +1392,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                     <div className="mt-1 text-xs text-slate-300 space-y-0.5">
                       <p className="line-clamp-1 text-slate-300">
-                        <strong className="text-amber-400 font-bold">Stage 1:</strong> {cp.stage1?.riddleTitle} (Ans: {cp.stage1?.answer})
+                        <strong className="text-amber-400 font-bold">Stage 1:</strong> {cp.stage1?.riddleTitle}
                       </p>
                       <p className="line-clamp-1 text-slate-400">
-                        <strong className="text-indigo-400 font-bold">Stage 2:</strong> {cp.stage2?.riddleText} (Ans: {cp.stage2?.answer})
+                        <strong className="text-indigo-400 font-bold">Stage 2:</strong> {cp.stage2?.riddleText}
                       </p>
                     </div>
                   </div>

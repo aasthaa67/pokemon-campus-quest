@@ -11,6 +11,7 @@ import {
   LeaderboardEntry,
   PowerUpType,
   TeamId,
+  TrainerPrivacySettings,
   TrainerProfile,
 } from './types';
 import { CAMPUSES, DEFAULT_CHECKPOINTS, TEAMS } from './config/campusConfig';
@@ -83,7 +84,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isVictoryOpen, setIsVictoryOpen] = useState<boolean>(false);
   const [isNewGameOpen, setIsNewGameOpen] = useState<boolean>(false);
-  const [showGameView, setShowGameView] = useState<boolean>(() => Boolean(trainer?.name));
+  const [showGameView, setShowGameView] = useState<boolean>(() => Boolean(trainer?.name && trainer?.rollNumber));
 
   // Ref to track already chimed geofences in the current session
   const soundedCheckpointsRef = useRef<Set<number>>(new Set());
@@ -249,16 +250,31 @@ export default function App() {
   }, [playerPos, checkpoints]);
 
   // Handlers
-  const handleSaveTrainer = (name: string, team: TeamId) => {
+  const handleSaveTrainer = (
+    name: string,
+    rollNumber: string,
+    team: TeamId,
+    privacySettings?: TrainerPrivacySettings
+  ) => {
     if (trainer) {
       setTrainer({
         ...trainer,
         name,
+        rollNumber,
         team,
+        privacySettings: privacySettings || trainer.privacySettings || {
+          hideRollNumberOnLeaderboard: false,
+          shareTeamAffiliation: true,
+        },
       });
     } else {
       setTrainer({
         name,
+        rollNumber,
+        privacySettings: privacySettings || {
+          hideRollNumberOnLeaderboard: false,
+          shareTeamAffiliation: true,
+        },
         team,
         score: 0,
         xp: 0,
@@ -564,7 +580,7 @@ export default function App() {
             currentCampusId={currentCampusId}
             onSelectCampus={handleSelectCampus}
             onStartAdventure={() => {
-              if (trainer) {
+              if (trainer?.rollNumber) {
                 setShowGameView(true);
               } else {
                 setIsTrainerSetupOpen(true);
@@ -579,6 +595,11 @@ export default function App() {
               if (!trainer) {
                 setTrainer({
                   name: 'Fresher Scout',
+                  rollNumber: '24DAVV-SCOUT',
+                  privacySettings: {
+                    hideRollNumberOnLeaderboard: false,
+                    shareTeamAffiliation: true,
+                  },
                   team: 'FIRE',
                   score: 100,
                   xp: 100,
@@ -637,10 +658,15 @@ export default function App() {
                     <span>{TEAMS[trainer.team]?.badgeIcon}</span>
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-display font-extrabold text-base text-white">
                         {trainer.name}
                       </h2>
+                      {trainer.rollNumber && (
+                        <span className="font-mono text-xs text-amber-300 bg-amber-950/70 border border-amber-500/40 px-2 py-0.5 rounded-full flex items-center gap-1 font-semibold">
+                          <span>🔒 #{trainer.rollNumber}</span>
+                        </span>
+                      )}
                       <span
                         className={`text-xs px-2 py-0.5 rounded-full font-bold border ${
                           TEAMS[trainer.team]?.borderColor
@@ -769,6 +795,7 @@ export default function App() {
 
             {/* Live Campus Map Component */}
             <CampusMap
+              currentCampusId={currentCampusId}
               checkpoints={checkpoints}
               playerPos={playerPos}
               selectedCheckpoint={selectedCheckpoint}
@@ -870,7 +897,7 @@ export default function App() {
         isOpen={isHowToPlayOpen}
         onClose={() => setIsHowToPlayOpen(false)}
         onStartNow={() => {
-          if (!trainer) setIsTrainerSetupOpen(true);
+          if (!trainer || !trainer.rollNumber) setIsTrainerSetupOpen(true);
           else setShowGameView(true);
         }}
       />
